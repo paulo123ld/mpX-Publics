@@ -333,6 +333,69 @@ local function monitorTiming(segundos)
         log("Se Their were 0 o tempo todo, o timing so existe dentro do cliente do jogo.")
     end
 end
+-- ATAQUE DE TIMING: o servidor manda TimingGoalPosition (o alvo) e espera o
+-- cliente reportar TimingPinPosition (a agulha). O pin fica 0 -> o hack trava
+-- em ~90%. Aqui a gente tenta descobrir QUAL payload faz o servidor aceitar.
+local function timingState()
+    local s = statsOf(LocalPlayer)
+    return {
+        goal = tonumber(s.TimingGoalPosition) or 0,
+        pin = tonumber(s.TimingPinPosition) or 0,
+        prog = tonumber(s.ActionProgress) or 0,
+        mini = tostring(s.MinigameResult),
+        pct = tostring(s.ShowActionPercent),
+    }
+end
+
+local function ataqueTiming(esperarSegundos)
+    log("=== ESPERANDO O MINIGAME COMECAR (ate " .. tostring(esperarSegundos or 30) .. "s) ===")
+    log("Voce precisa estar hackeando um PC. Deixa o hack rolando sozinho.")
+    local fim = os.clock() + (esperarSegundos or 30)
+    local achou = false
+    while os.clock() < fim do
+        local st = timingState()
+        if st.goal ~= 0 then
+            achou = true
+            log(">>> MINIGAME ATIVO! goal=" .. tostring(st.goal) .. " pin=" .. tostring(st.pin) .. " prog=" .. tostring(st.prog))
+            break
+        end
+        task.wait(0.05)
+    end
+    if not achou then
+        log("O minigame nao ativou (goal ficou 0). Tenta de novo com o Auto Hack ligado.")
+        return
+    end
+
+    -- payload = { rotulo, funcao que dispara }
+    local payloads = {
+        { rot = "SetPlayerMinigameResult(goal)",   fn = function(g) RE:FireServer("SetPlayerMinigameResult", g) end },
+        { rot = "SetPlayerMinigameResult(true,g)",fn = function(g) RE:FireServer("SetPlayerMinigameResult", true, g) end },
+        { rot = "SetPlayerMinigameResult(true,g,g)", fn = function(g) RE:FireServer("SetPlayerMinigameResult", true, g, g) end },
+        { rot = "SetPlayerTiming(g)",             fn = function(g) RE:FireServer("SetPlayerTiming", g) end },
+        { rot = "SetPlayerPin(g)",                fn = function(g) RE:FireServer("SetPlayerPin", g) end },
+        { rot = "SetTiming(g,g)",                  fn = function(g) RE:FireServer("SetTiming", g, g) end },
+        { rot = "Input/Timing(g)",                fn = function(g) RE:FireServer("Input", "Timing", g) end },
+        { rot = "SetPlayerTimingPin(g)",          fn = function(g) RE:FireServer("SetPlayerTimingPin", g) end },
+    }
+
+    for _, p in ipairs(payloads) do
+        local st0 = timingState()
+        local g = st0.goal
+        if g == 0 then g = 1 end
+        local ok = pcall(p.fn, g)
+        task.wait(0.5)
+        local st1 = timingState()
+        local mudou = (st1.pin ~= st0.pin) or (st1.mini ~= st0.mini) or (st1.prog > st0.prog + 0.01)
+        log(string.format("   %s -> pin %s->%s | prog %s->%s | mini %s->%s %s",
+            p.rot, tostring(st0.pin), tostring(st1.pin),
+            tostring(st0.prog), tostring(st1.prog),
+            st0.mini, st1.mini, mudou and "  <<< MUDOU!" or ""))
+        if st1.pin ~= 0 then
+            log(">>> ACHOU! O payload '" .. p.rot .. "' fez o servidor aceitar o pin!")
+        end
+    end
+    log("=== FIM DO ATAQUE DE TIMING ===")
+end
 local function mostrarRemotes()
     local nomes = {}
     for _, r in ipairs(remotes) do
@@ -420,6 +483,7 @@ local function buildGui()
     botao("4) Testar com numeros", testesComArgumentos)
     botao("5) Testar outros remotes", testesOutrosRemotes)
     botao("8) TESTE DIRETO: Slow Beast", testeSlowBeast)
+    botao("C) ATAQUE DE TIMING (testa payloads)", function() ataqueTiming(40) end)
     botao("A) Ler timing agora (1x)", lerTiming)
     botao("B) Monitorar timing 20s", function() monitorTiming(20) end)
     botao("6) Mostrar estado de todos", espelharEstado)
