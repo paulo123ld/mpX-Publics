@@ -86,14 +86,22 @@ local function wsOf(plr)
 end
 
 -- assinatura curta de um jogador (o que muda quando algo acontece)
+-- ATENCAO: CurrentAnimation fica oscilando (Typing <-> vazio) quando OUTRO
+-- jogador digita no PC. Isso gera falso positivo. Por isso aqui a gente
+-- ignora CurrentAnimation e foca nos campos que o servidor controla de verdade:
+-- NormalWalkSpeed (velocidade oficial), ActionProgress, IsBeast, IsCrawling.
 local function sigOf(plr)
     local s = statsOf(plr)
     local parts = {
         s.Beast or s.IsBeast or "?",
-        s.Idle or s.CurrentAnimation or s.Anim or "?",
+        "nws" .. tostring(s.NormalWalkSpeed or "?"),
+        "ap" .. tostring(s.ActionProgress or "?"),
+        "ai" .. tostring(s.ActionInput or "?"),
         s.Capture or s.Captured or "?",
         s.Rag or s.Ragdoll or "?",
         s.Crawl or s.IsCrawling or "?",
+        s.WasHitDownOnce or "?",
+        s.Escaped or "?",
         "ws" .. tostring(wsOf(plr)),
     }
     return table.concat(parts, "/")
@@ -216,6 +224,83 @@ local function testesOutrosRemotes()
     log("=== FIM ===")
 end
 
+-- funcao beast mais proximo (para盯着 NormalWalkSpeed, que e o campo do servidor)
+local function beastAlvo()
+    local best, bd
+    local meu = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    for _, p in ipairs(Players:GetPlayers()) do
+        local s = statsOf(p)
+        local ehBeast = (s.Beast == "true") or (s.IsBeast == "true")
+        if ehBeast and p ~= LocalPlayer then
+            local r = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+            if r and meu then
+                local d = (r.Position - meu.Position).Magnitude
+                if not bd or d < bd then best, bd = p, d end
+            elseif not best then
+                best = p
+            end
+        end
+    end
+    return best
+end
+
+local function nwsDe(plr)
+    return tostring(statsOf(plr).NormalWalkSpeed or "?")
+end
+
+-- TESTE DIRETO DO "SLOW BEAST": manda comandos com o nome/objeto do jogador
+local function testeSlowBeast()
+    local alvo = beastAlvo()
+    if not alvo then log("Nenhuma beast encontrada agora ( rode quando ela existir )") return end
+    log("Alvo: " .. alvo.Name .. " | NormalWalkSpeed agora = " .. nwsDe(alvo))
+    local nome = alvo.Name
+    local display = alvo.DisplayName
+
+    local testes = {
+        { rot = "Input/Slow + true",      fn = function() RE:FireServer("Input", "Slow", true) end },
+        { rot = "Input/Slow + nome",      fn = function() RE:FireServer("Input", "Slow", nome) end },
+        { rot = "Input/Slow + display",   fn = function() RE:FireServer("Input", "Slow", display) end },
+        { rot = "Input/SlowBeast + nome", fn = function() RE:FireServer("Input", "SlowBeast", nome) end },
+        { rot = "Input/SlowPlayer + nome",fn = function() RE:FireServer("Input", "SlowPlayer", nome) end },
+        { rot = "Input/SetSpeed + 5",     fn = function() RE:FireServer("Input", "SetSpeed", 5) end },
+        { rot = "Input/SlowDown + nome",  fn = function() RE:FireServer("Input", "SlowDown", nome) end },
+        { rot = "Input/Freeze + nome",    fn = function() RE:FireServer("Input", "Freeze", nome) end },
+        { rot = "Input/Stun + nome",      fn = function() RE:FireServer("Input", "Stun", nome) end },
+        { rot = "Input/Untie + nome",     fn = function() RE:FireServer("Input", "Untie", nome) end },
+        { rot = "Input/Revive + nome",    fn = function() RE:FireServer("Input", "Revive", nome) end },
+        { rot = "Input/Seer + true",      fn = function() RE:FireServer("Input", "Seer", true) end },
+    }
+
+    for _, t in ipairs(testes) do
+        local antes = nwsDe(alvo)
+        pcall(t.fn)
+        task.wait(1.5)
+        local depois = nwsDe(alvo)
+        if antes ~= depois then
+            log(">>> ACHOU! " .. t.rot .. " -> NormalWalkSpeed " .. antes .. " -> " .. depois)
+        else
+            log("    sem efeito: " .. t.rot .. " (nws " .. antes .. ")")
+        end
+    end
+    log("=== FIM DO TESTE SLOW BEAST ===")
+end
+
+-- testa os outros remotes do jogo com payloads diferentes
+local function testeOutrosRemotes()
+    local payloads = {
+        { "Slow", true }, { "Stun", true }, { "Kill", true }, { "SlowBeast", true },
+    }
+    for _, r in ipairs(remotes) do
+        if r.Name ~= "RemoteEvent" then
+            for _, pl in ipairs(payloads) do
+                local ok = pcall(function() r:FireServer(pl[1], pl[2]) end)
+                if ok then task.wait(0.4) end
+            end
+            log("disparado: " .. r.Name)
+        end
+    end
+    log("=== FIM OUTROS REMOTES ===")
+end
 local function mostrarRemotes()
     local nomes = {}
     for _, r in ipairs(remotes) do
@@ -302,7 +387,9 @@ local function buildGui()
     botao("3) Rodar todos os comandos", testesAutomaticos)
     botao("4) Testar com numeros", testesComArgumentos)
     botao("5) Testar outros remotes", testesOutrosRemotes)
+    botao("8) TESTE DIRETO: Slow Beast", testeSlowBeast)
     botao("6) Mostrar estado de todos", espelharEstado)
+    botao("9) Disparar outros remotes", testeOutrosRemotes)
     botao("7) Imprimir log no console", function()
         print("[PROBE-LOG]\n" .. table.concat(out, "\n"))
         notify("Log impresso (F9)")
