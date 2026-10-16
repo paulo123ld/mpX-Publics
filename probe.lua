@@ -301,6 +301,38 @@ local function testeOutrosRemotes()
     end
     log("=== FIM OUTROS REMOTES ===")
 end
+-- LEITOR DE TIMING: ficar olhando os campos do minigame enquanto hackeia.
+-- Se TimingGoalPosition/TimingPinPosition preencherem, achamos o "acerto perfeito".
+local function lerTiming()
+    local s = statsOf(LocalPlayer)
+    log(string.format("TIMING goal=%s pin=%s prog=%s input=%s pct=%s mini=%s anim=%s",
+        tostring(s.TimingGoalPosition), tostring(s.TimingPinPosition),
+        tostring(s.ActionProgress), tostring(s.ActionInput),
+        tostring(s.ShowActionPercent), tostring(s.MinigameResult),
+        tostring(s.CurrentAnimation)))
+end
+
+local function monitorTiming(segundos)
+    local fim = os.clock() + (segundos or 20)
+    local n, comDados = 0, 0
+    log("=== MONITOR DE TIMING por " .. tostring(segundos or 20) .. "s (hackeia um PC agora) ===")
+    while os.clock() < fim do
+        local s = statsOf(LocalPlayer)
+        local g = tonumber(s.TimingGoalPosition) or 0
+        local p = tonumber(s.TimingPinPosition) or 0
+        if g ~= 0 or p ~= 0 then
+            comDados = comDados + 1
+            log(string.format("  DADOS! goal=%s pin=%s prog=%s input=%s", tostring(g), tostring(p), tostring(s.ActionProgress), tostring(s.ActionInput)))
+        end
+        n = n + 1
+        task.wait(0.05)
+    end
+    log("=== FIM: " .. n .. " amostras, " .. comDados .. " com timing preenchido ===")
+    if comDados == 0 then
+        log("O servidor NAO preenche TimingGoalPosition/TimingPinPosition (ficam 0).")
+        log("Se Their were 0 o tempo todo, o timing so existe dentro do cliente do jogo.")
+    end
+end
 local function mostrarRemotes()
     local nomes = {}
     for _, r in ipairs(remotes) do
@@ -388,6 +420,8 @@ local function buildGui()
     botao("4) Testar com numeros", testesComArgumentos)
     botao("5) Testar outros remotes", testesOutrosRemotes)
     botao("8) TESTE DIRETO: Slow Beast", testeSlowBeast)
+    botao("A) Ler timing agora (1x)", lerTiming)
+    botao("B) Monitorar timing 20s", function() monitorTiming(20) end)
     botao("6) Mostrar estado de todos", espelharEstado)
     botao("9) Disparar outros remotes", testeOutrosRemotes)
     botao("7) Imprimir log no console", function()
