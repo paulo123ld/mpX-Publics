@@ -2,7 +2,7 @@
 local JSONBIN_ID   = "6a735f7eda38895dfebda63a"
 local GITHUB_USER  = "paulo123ld"
 local GITHUB_REPO  = "mpX-Hub"
-local HUB_VERSION  = "6.14"
+local HUB_VERSION  = "6.15"
 
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
@@ -134,18 +134,28 @@ local function loadModule()
         print("[mpX Hub] Core v" .. HUB_VERSION .. " carregado!")
     end
 
-    local code = fetchGitHubFile("Games/" .. placeId .. ".lua")
-              or fetchGitHubFile("Games/Universal.lua")
+    local universalCode = fetchGitHubFile("Games/Universal.lua")
+    local gameCode      = fetchGitHubFile("Games/" .. placeId .. ".lua")
 
-    if code then
+    local function runCode(code, label)
+        if not code then return false end
         local fn, err = loadstring(code)
-        if fn then
-            fn()
-        else
-            warn("[mpX Hub] Erro no script: " .. tostring(err))
+        if not fn then
+            warn("[mpX Hub] Erro ao compilar " .. label .. ": " .. tostring(err))
+            return false
         end
+        local ok, e2 = pcall(fn)
+        if not ok then warn("[mpX Hub] Erro ao rodar " .. label .. ": " .. tostring(e2)) end
+        return ok
+    end
+
+    -- arquivo de jogo marcado com --[[mpX_ADDON]] roda POR CIMA do Universal
+    if gameCode and gameCode:find("%-%-%[%[mpX_ADDON%]%]") then
+        print("[mpX Hub] Universal + addon do jogo")
+        runCode(universalCode, "Universal")
+        runCode(gameCode, "addon do jogo")
     else
-        warn("[mpX Hub] Nenhum script encontrado!")
+        runCode(gameCode or universalCode, "script do jogo")
     end
 end
 
