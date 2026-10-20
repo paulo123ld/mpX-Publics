@@ -65,9 +65,61 @@ local function fetchGitHubFile(path)
         }
     })
     if response.StatusCode == 200 then
-        return response.Body
+        local body = response.Body or ""
+        if not string.find(body, "too_large", 1, true) then
+            return body
+        end
     end
-    return nil
+    -- Arquivo grande (a contents API so devolve texto ate 1MB): pega o sha
+    -- e usa o blob API, que aguenta ate 100MB.
+    local meta = httpRequest({
+        Url     = url,
+        Method  = "GET",
+        Headers = {
+            ["Authorization"] = "token " .. GITHUB_TOKEN,
+            ["Accept"]        = "application/vnd.github+json",
+            ["User-Agent"]    = "RobloxHost"
+        }
+    })
+    if meta.StatusCode ~= 200 then
+        return nil
+    end
+    local okMeta, dec = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(meta.Body)
+    end)
+    if not okMeta or type(dec) ~= "table" or not dec.sha then
+        return nil
+    end
+    local blob = httpRequest({
+        Url     = string.format(
+            "https://api.github.com/repos/%s/%s/git/blobs/%s",
+            GITHUB_USER, GITHUB_REPO, dec.sha
+        ),
+        Method  = "GET",
+        Headers = {
+            ["Authorization"] = "token " .. GITHUB_TOKEN,
+            ["Accept"]        = "application/vnd.github+json",
+            ["User-Agent"]    = "RobloxHost"
+        }
+    })
+    if blob.StatusCode ~= 200 then
+        return nil
+    end
+    local okBlob, b = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(blob.Body)
+    end)
+    if not okBlob or type(b) ~= "table" or not b.content then
+        return nil
+    end
+    local content = string.gsub(b.content, "\n", "")
+    if b.encoding == "base64" then
+        local okDec, text = pcall(function() return game:Base64Decode(content) end)
+        if not okDec then
+            return nil
+        end
+        return text
+    end
+    return content
 end
 
 local function loadModule()
@@ -77,9 +129,52 @@ local function loadModule()
 
     if getgenv()._mpX_Version ~= HUB_VERSION then
         getgenv()._mpX_Obsidian = nil
+        getgenv()._mpX_Corvus   = nil
         getgenv()._mpX_Core     = nil
         getgenv()._mpX_WindUI   = nil
         getgenv()._mpX_Version  = HUB_VERSION
+    end
+
+    -- UI: biblioteca Corvus (Obsidian + camada visual do Corvus: starfield,
+    -- aurora, glass, cometa, cursor light, widgets Professional).
+    -- A mesma lib atende os jogos antigos (API Obsidian) e o shim WindUI
+    -- atende os scripts que falavam WindUI (Universal, Marretao, addons).
+    if not getgenv()._mpX_Corvus then
+        local corvusCode = fetchGitHubFile("Libs/CorvusUI.lua")
+
+        if corvusCode then
+            local fn, err = loadstring(corvusCode)
+            if not fn then
+                warn("[mpX Hub] Erro compilando CorvusUI: " .. tostring(err))
+            else
+                local ok, result = pcall(fn)
+                if ok and type(result) == "table" then
+                    getgenv()._mpX_Corvus = result
+                    getgenv()._mpX_Obsidian = result
+                    print("[mpX Hub] CorvusUI carregado!")
+                else
+                    warn("[mpX Hub] Erro executando CorvusUI: " .. tostring(result))
+                end
+            end
+        else
+            warn("[mpX Hub] Falha ao baixar CorvusUI (seguindo no WindUI antigo).")
+        end
+    end
+
+    if getgenv()._mpX_Corvus and not getgenv()._mpX_WindUI then
+        local shimCode = fetchGitHubFile("Libs/WindUIShim.lua")
+        if shimCode then
+            local fn = loadstring(shimCode)
+            local ok, result = pcall(fn)
+            if ok and type(result) == "table" then
+                getgenv()._mpX_WindUI = result
+                print("[mpX Hub] Shim WindUI pronto!")
+            else
+                warn("[mpX Hub] Erro no shim WindUI: " .. tostring(result))
+            end
+        else
+            warn("[mpX Hub] Falha ao baixar o shim WindUI.")
+        end
     end
 
     if not getgenv()._mpX_Obsidian then
