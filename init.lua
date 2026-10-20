@@ -7,7 +7,7 @@ local HUB_VERSION  = "6.27"
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
 if not httpRequest then
-    warn("[mpX Hub] Executor nÃƒÂ£o suporta HTTP.")
+    warn("[mpX Hub] Executor não suporta HTTP.")
     return
 end
 
@@ -201,7 +201,7 @@ local function loadModule()
     end
 
     if not getgenv()._mpX_Obsidian then
-        warn("[mpX Hub] Obsidian nÃƒÂ£o estÃƒÂ¡ no cache!")
+        warn("[mpX Hub] Obsidian não está no cache!")
         return
     end
 
@@ -221,7 +221,7 @@ local function loadModule()
                 end
             end
         else
-            warn("[mpX Hub] Falha ao baixar Core Ã¢Â€Â” recursos extras desativados.")
+            warn("[mpX Hub] Falha ao baixar Core — recursos extras desativados.")
         end
     end
 
